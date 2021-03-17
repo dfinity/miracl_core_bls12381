@@ -1,0 +1,4 @@
+This repo contains Rust code of https://github.com/miracl/core[`miracl_core`] for curve BLS 12-381.
+It was built from https://github.com/miracl/core/commit/938c5e754e8281572831bc28bd589e914118c0a2[938c5e7]
+according to https://github.com/miracl/core/tree/master/rust#using-miracl-core-with-cargo[these instructions],
+running `python3 config64.py` for curve #31 (bls12381).
