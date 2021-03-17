@@ -1,11 +1,14 @@
 [package]
 name = "miracl_core_bls12381"
-version = "1.0.0"
+version = "0.4.1"
+authors = ["DFINITY Stiftung <sdk@dfinity.org>"]
 documentation = "https://github.com/miracl/core"
 repository = "https://github.com/dfinity-publish/miracl_core_bls12381"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Rust code of https://github.com/miracl/core (miracl_core) for curve BLS 12-381"
+license-file = "LICENSE.txt"
+readme = "README.adoc"
+include = ["src", "Cargo.toml", "LICENSE", "README.adoc", "NOTICE.txt"]
 
 [dependencies]
 
