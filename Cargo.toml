@@ -1,14 +1,14 @@
 [package]
 name = "miracl_core_bls12381"
-version = "0.4.1"
+version = "4.1.0"
 authors = ["DFINITY Stiftung <sdk@dfinity.org>"]
 documentation = "https://github.com/miracl/core"
-repository = "https://github.com/dfinity-publish/miracl_core_bls12381"
+repository = "https://github.com/dfinity/miracl_core_bls12381"
 edition = "2018"
 description = "Rust code of https://github.com/miracl/core (miracl_core) for curve BLS 12-381"
-license-file = "LICENSE.txt"
-readme = "README.adoc"
-include = ["src", "Cargo.toml", "LICENSE", "README.adoc", "NOTICE.txt"]
+license = "Apache-2.0"
+readme = "README.md"
+include = ["src", "Cargo.toml", "LICENSE", "README.md", "NOTICE.txt"]
 
 [dependencies]
 

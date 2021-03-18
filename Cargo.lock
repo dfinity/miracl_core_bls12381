@@ -2,4 +2,4 @@
 # It is not intended for manual editing.
 [[package]]
 name = "miracl_core_bls12381"
-version = "0.4.1"
+version = "4.1.0"
