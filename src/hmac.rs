@@ -199,16 +199,17 @@ pub fn pbkdf2(hash: usize, sha: usize, pass: &[u8], salt: &[u8], rep: usize, ole
             s[sl + j] = n[j]
         }
 
-        hmac1(hash, sha, &mut f, sha, pass, &s[0..sl + 4]);
+        hmac1(hash, sha, &mut f, sha, &s[0..sl + 4], pass);
 
         for j in 0..sha {
             u[j] = f[j]
         }
+
         for _ in 1..rep {
-            hmac1(hash, sha, &mut ku, sha, pass, &u);
-            for k in 0..sha {
-                u[k] = ku[k];
-                f[k] ^= u[k]
+            hmac1(hash, sha, &mut ku, sha, &u, pass);
+            for m in 0..sha {
+                u[m] = ku[m];
+                f[m] ^= u[m]
             }
         }
         for j in 0..sha {
@@ -266,6 +267,7 @@ pub fn hmac1(hash: usize, sha: usize, tag: &mut [u8], olen: usize, k: &[u8], m: 
     for i in 0..lb {
         k0[i] ^= 0x36
     }
+
     GPhashit(hash, sha, &mut b,0,0,Some(&k0[0..lb]), -1, Some(m));
 
     for i in 0..lb {
@@ -339,6 +341,18 @@ pub fn xof_expand(hlen: usize,okm: &mut [u8],olen: usize,dst: &[u8],msg: &[u8]) 
 }
 
 pub fn xmd_expand(hash: usize,hlen: usize,okm: &mut [u8],olen: usize,dst: &[u8],msg: &[u8]) {
+    let mut w:[u8; 64]=[0;64];
+    if dst.len() >= 256 {
+        GPhashit(hash, hlen, &mut w, 0, 0, Some(b"H2C-OVERSIZE-DST-"), -1, Some(&dst));
+        xmd_expand_short_dst(hash, hlen, okm, olen, &w[0..hlen], msg);
+    } else {
+        xmd_expand_short_dst(hash, hlen, okm, olen, dst, msg);
+    }
+}
+
+// Assumes dst.len() < 256.
+fn xmd_expand_short_dst(hash: usize,hlen: usize,okm: &mut [u8],olen: usize,dst: &[u8],msg: &[u8]) {
+
     let mut tmp: [u8; 260] = [0; 260];
     let mut h0: [u8; 64]=[0;64];
     let mut h1: [u8; 64]=[0;64];
@@ -441,7 +455,7 @@ pub fn mgf1xor(sha: usize, z: &[u8], olen: usize, k: &mut [u8]) {
     }
 }
 
-
+// PKCS 1.5
 /* SHAXXX identifier strings */
 const SHA256ID: [u8; 19] = [
     0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
@@ -466,7 +480,6 @@ pub fn pkcs15(sha: usize, m: &[u8], w: &mut [u8],rfs: usize) -> bool {
         return false;
     }
     SPhashit(MC_SHA2,sha,&mut b,Some(m));
-    //hashit(sha, Some(m), -1, &mut b);
 
     for i in 0..w.len() {
         w[i] = 0
@@ -482,7 +495,6 @@ pub fn pkcs15(sha: usize, m: &[u8], w: &mut [u8],rfs: usize) -> bool {
     }
     w[i] = 0;
     i += 1;
-
     if hlen == SHA256 {
         for j in 0..idlen {
             w[i] = SHA256ID[j];
@@ -505,17 +517,67 @@ pub fn pkcs15(sha: usize, m: &[u8], w: &mut [u8],rfs: usize) -> bool {
         w[i] = b[j];
         i += 1
     }
-
     true
 }
-/*
-pub fn printbinary(array: &[u8]) {
-    for i in 0..array.len() {
-        print!("{:02X}", array[i])
+
+// Alternate PKCS 1.5
+/* SHAXXX identifier strings */
+const SHA256IDB: [u8; 17] = [
+    0x30, 0x2f, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x04, 0x20];
+const SHA384IDB: [u8; 17] = [
+    0x30, 0x3f, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x04, 0x30];
+const SHA512IDB: [u8; 17] = [
+    0x30, 0x4f, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x04, 0x40];
+
+pub fn pkcs15b(sha: usize, m: &[u8], w: &mut [u8],rfs: usize) -> bool {
+    let olen = rfs;
+    let hlen = sha;
+    let idlen = 17;
+    let mut b: [u8; 64] = [0; 64]; /* Not good */
+
+    if olen < idlen + hlen + 10 {
+        return false;
     }
-    println!("")
+    SPhashit(MC_SHA2,sha,&mut b,Some(m));
+    for i in 0..w.len() {
+        w[i] = 0
+    }
+    let mut i = 0;
+    w[i] = 0;
+    i += 1;
+    w[i] = 1;
+    i += 1;
+    for _ in 0..olen - idlen - hlen - 3 {
+        w[i] = 0xff;
+        i += 1
+    }
+    w[i] = 0;
+    i += 1;
+    if hlen == SHA256 {
+        for j in 0..idlen {
+            w[i] = SHA256IDB[j];
+            i += 1
+        }
+    }
+    if hlen == SHA384 {
+        for j in 0..idlen {
+            w[i] = SHA384IDB[j];
+            i += 1
+        }
+    }
+    if hlen == SHA512 {
+        for j in 0..idlen {
+            w[i] = SHA512IDB[j];
+            i += 1
+        }
+    }
+    for j in 0..hlen {
+        w[i] = b[j];
+        i += 1
+    }
+    true
 }
-*/
+
 pub fn pss_encode(sha: usize, m: &[u8], rng: &mut impl RAND, f: &mut [u8], rfs: usize) -> bool {
     let emlen=rfs;
     let embits=8*emlen-1;
@@ -624,6 +686,8 @@ pub fn pss_verify(sha: usize, m: &[u8],f: &[u8]) -> bool {
     }
     true
 }
+
+
 /* OAEP Message Encoding for Encryption */
 pub fn oaep_encode(sha: usize, m: &[u8], rng: &mut impl RAND, p: Option<&[u8]>, f: &mut [u8], rfs: usize) -> bool {
     let olen = rfs - 1;
@@ -656,7 +720,7 @@ pub fn oaep_encode(sha: usize, m: &[u8], rng: &mut impl RAND, p: Option<&[u8]>, 
         seed[i] = rng.getbyte()
     }
 
-    mgf1(sha, &seed, olen - seedlen, &mut dbmask);
+    mgf1(sha, &seed[0..seedlen], olen - seedlen, &mut dbmask);
 
     for i in 0..olen - seedlen {
         dbmask[i] ^= f[i]
@@ -719,16 +783,14 @@ pub fn oaep_decode(sha: usize, p: Option<&[u8]>, f: &mut [u8],rfs :usize) -> usi
     for i in 0..seedlen {
         seed[i] ^= f[i + 1]
     }
-    mgf1(sha, &seed, olen - seedlen, f);
+    mgf1(sha, &seed[0..seedlen], olen - seedlen, f);
     for i in 0..olen - seedlen {
         dbmask[i] ^= f[i]
     }
 
-    let mut comp = true;
+    let mut comp=0;
     for i in 0..hlen {
-        if chash[i] != dbmask[i] {
-            comp = false
-        }
+        comp |= (chash[i]^dbmask[i]) as usize;
     }
 
     for i in 0..olen - seedlen - hlen {
@@ -740,26 +802,25 @@ pub fn oaep_decode(sha: usize, p: Option<&[u8]>, f: &mut [u8],rfs :usize) -> usi
         chash[i] = 0
     }
 
-    let mut k = 0;
-    loop {
-        if k >= olen - seedlen - hlen {
-            return 0;
+// find first non-zero t in array
+    let mut k=0;
+    let mut t=0;
+    let m=olen-seedlen-hlen;
+    for i in 0..m {
+        if t==0 && dbmask[i]!=0 {
+            k=i;
+            t=dbmask[i];
         }
-        if dbmask[k] != 0 {
-            break;
-        }
-        k += 1;
     }
 
-    let t = dbmask[k];
-    if !comp || x != 0 || t != 0x01 {
+    if comp!=0 || x != 0 || t != 0x01 {
         for i in 0..olen - seedlen {
             dbmask[i] = 0
         }
         return 0;
     }
 
-    for i in 0..olen - seedlen - hlen - k - 1 {
+    for i in 0..m - k - 1 {
         f[i] = dbmask[i + k + 1];
     }
 
@@ -767,7 +828,7 @@ pub fn oaep_decode(sha: usize, p: Option<&[u8]>, f: &mut [u8],rfs :usize) -> usi
         dbmask[i] = 0
     }
 
-    olen - seedlen - hlen - k - 1
+    m - k - 1
 }
 
 /*
