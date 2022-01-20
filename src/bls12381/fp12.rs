@@ -40,11 +40,14 @@ pub struct FP12 {
     stype: usize,
 }
 
+#[cfg(feature = "std")]
 impl std::fmt::Debug for FP12 {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
     }
 }    
+
+#[cfg(feature = "std")]
 impl std::fmt::Display for FP12 {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
@@ -135,7 +138,7 @@ impl FP12 {
         self.b.cmove(&g.b, d);
         self.c.cmove(&g.c, d);
         let mut u = d as usize;
-        u = !(u - 1);
+        u = !(u.wrapping_sub(1));
         self.stype ^= (self.stype ^ g.stype) & u;
     }
 
@@ -904,6 +907,7 @@ impl FP12 {
     }
 
     /* output to hex string */
+#[cfg(not(feature = "no_std"))]
     pub fn tostring(&self) -> String {
         format!(
             "[{},{},{}]",

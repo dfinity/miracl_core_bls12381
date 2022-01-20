@@ -147,7 +147,9 @@ pub fn deriveKeyPair(config_id: usize,mut sk: &mut [u8],mut pk: &mut [u8],seed: 
     let mut prk: [u8;ecp::HASH_TYPE]=[0;ecp::HASH_TYPE];
     labeledExtract(&mut prk,None,&suite_id,"dkp_prk",Some(&seed));
 
-	if kem==32 || kem==33 {
+    //println!("prk= {:02X?}",prk);
+
+	if kem==32 || kem==33 { // RFC7748
         labeledExpand(&mut sk,&prk,&suite_id,"sk",None,GROUP);
         reverse(&mut sk);
 		if kem==32 {
@@ -174,6 +176,11 @@ pub fn deriveKeyPair(config_id: usize,mut sk: &mut [u8],mut pk: &mut [u8],seed: 
             counter += 1;
         }
     }
+    //for i in 0..sk.len() {
+//	print!({}
+//    println!("SK= {:02X?}",sk);
+  //  println!("kem= {}",kem);
+    //println!("counter= {}",counter);
     ecdh::key_pair_generate(None::<&mut RAND_impl>, &mut sk, &mut pk);
     if kem==32 || kem==33 {
         reverse(&mut pk);

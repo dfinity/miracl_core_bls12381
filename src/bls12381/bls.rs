@@ -23,7 +23,7 @@ use crate::bls12381::ecp;
 use crate::bls12381::ecp::ECP;
 use crate::bls12381::dbig::DBIG;
 use crate::bls12381::ecp2::ECP2;
-use crate::bls12381::fp4::FP4;
+//use crate::bls12381::fp4::FP4;
 use crate::bls12381::pair;
 use crate::bls12381::rom;
 use crate::hmac;
@@ -41,7 +41,10 @@ pub const BLS_FAIL: isize = -1;
 
 // NOTE this must be accessed in unsafe mode.
 // But it is just written to once at start-up, so actually safe.
-static mut G2_TAB: [FP4; ecp::G2_TABLE] = [FP4::new(); ecp::G2_TABLE];
+
+// Best not to use precomp if stack memory limited - i.e. embedded use
+// Uncomment to use precomp
+// static mut G2_TAB: [FP4; ecp::G2_TABLE] = [FP4::new(); ecp::G2_TABLE];
 
 fn ceil(a: usize,b: usize) -> usize {
     (a-1)/b+1
@@ -50,7 +53,8 @@ fn ceil(a: usize,b: usize) -> usize {
 /* output u \in F_p */
 fn hash_to_field(hash: usize,hlen: usize ,u: &mut [FP], dst: &[u8],m: &[u8],ctr: usize) {
     let q = BIG::new_ints(&rom::MODULUS);
-    let el = ceil(q.nbits()+ecp::AESKEY*8,8);
+    let nbq=q.nbits();
+    let el = ceil(nbq+ecp::AESKEY*8,8);
 
     let mut okm: [u8;256]=[0;256];
     let mut fd: [u8;128]=[0;128];
@@ -60,15 +64,14 @@ fn hash_to_field(hash: usize,hlen: usize ,u: &mut [FP], dst: &[u8],m: &[u8],ctr:
         for j in 0..el {
             fd[j]=okm[el*i+j];
         }
-        u[i]=FP::new_big(&DBIG::frombytes(&fd[0 .. el]).dmod(&q));
+        u[i]=FP::new_big(&DBIG::frombytes(&fd[0 .. el]).ctdmod(&q,8*el-nbq));
     }
 }
 
 /* hash a message to an ECP point, using SHA2, random oracle method */
 #[allow(non_snake_case)]
 pub fn bls_hash_to_point(m: &[u8]) -> ECP {
-    let dst= "BLS_SIG_ZZZG1_XMD:SHA-256_SVDW_RO_NUL_".to_ascii_uppercase();
-//    let dst= String::from("BLS_SIG_ZZZG1_XMD:SHA-256_SSWU_RO_NUL_".to_ascii_uppercase());
+    let dst= "BLS_SIG_BLS12381G1_XMD:SHA-256_SVDW_RO_NUL_";
 
     let mut u: [FP; 2] = [
         FP::new(),
@@ -86,25 +89,27 @@ pub fn bls_hash_to_point(m: &[u8]) -> ECP {
 }
 
 pub fn init() -> isize {
-    let g = ECP2::generator();
-    if g.is_infinity() {
-        return BLS_FAIL;
-    }
-    unsafe {
-        pair::precomp(&mut G2_TAB, &g);
-    }
+// Uncomment to use precomp
+//    let g = ECP2::generator();
+//    if g.is_infinity() {
+//        return BLS_FAIL;
+//    }
+//    unsafe {
+//        pair::precomp(&mut G2_TAB, &g);
+//    }
     BLS_OK
 }
 
 /* generate key pair, private key s, public key w */
 pub fn key_pair_generate(ikm: &[u8], s: &mut [u8], w: &mut [u8]) -> isize {
-    let r = BIG::new_ints(&rom::CURVE_ORDER);   
-    let el = ceil(3*ceil(r.nbits(),8),2);
+    let r = BIG::new_ints(&rom::CURVE_ORDER);  
+    let nbr=r.nbits();
+    let el = ceil(3*ceil(nbr,8),2);
     let g = ECP2::generator();
     let mut len: [u8; 2] = [0; 2];
     hmac::inttobytes(el,&mut len);
     
-    let salt=String::from("BLS-SIG-KEYGEN-SALT-");
+    let salt="BLS-SIG-KEYGEN-SALT-";
 
     let mut prk: [u8;64]=[0;64];
     let mut okm: [u8;128]=[0;128];
@@ -121,7 +126,7 @@ pub fn key_pair_generate(ikm: &[u8], s: &mut [u8], w: &mut [u8]) -> isize {
     hmac::hkdf_expand(hmac::MC_SHA2,hlen,&mut okm,el,&prk[0 .. hlen],&len);
 
     let mut dx = DBIG::frombytes(&okm[0 .. el]);
-    let sc = dx.dmod(&r);
+    let sc = dx.ctdmod(&r,8*el-nbr);
     sc.tobytes(s);
 // SkToPk
     pair::g2mul(&g, &sc).tobytes(w,true);  // true for public key compression
@@ -153,18 +158,20 @@ pub fn core_verify(sig: &[u8], m: &[u8], w: &[u8]) -> isize {
         return BLS_FAIL;
     }
 
+// Uncomment to use precomp
     // Use new multi-pairing mechanism
-    let mut r = pair::initmp();
+    //let mut r = pair::initmp();
     //    pair::another(&mut r,&g,&d);
 
-    unsafe {
-        pair::another_pc(&mut r, &G2_TAB, &d);
-    }
-    pair::another(&mut r, &pk, &hm);
-    let mut v = pair::miller(&mut r);
+    //unsafe {
+    //    pair::another_pc(&mut r, &G2_TAB, &d);
+    //}
+    //pair::another(&mut r, &pk, &hm);
+    //let mut v = pair::miller(&mut r);
 
-    //.. or alternatively
-    //    let mut v = pair::ate2(&g, &d, &pk, &hm);
+    //.. or else do not use precomp!
+        let g = ECP2::generator();
+        let mut v = pair::ate2(&g, &d, &pk, &hm);
 
     v = pair::fexp(&v);
     if v.isunity() {

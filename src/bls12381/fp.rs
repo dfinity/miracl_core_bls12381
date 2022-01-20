@@ -32,11 +32,14 @@ pub struct FP {
     pub xes: i32,
 }
 
+#[cfg(feature = "std")]
 impl std::fmt::Debug for FP {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
     }
 }
+
+#[cfg(feature = "std")]
 impl std::fmt::Display for FP {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
@@ -206,6 +209,7 @@ impl FP {
     }
 
     /* convert to string */
+#[cfg(not(feature = "no_std"))]
     pub fn tostring(&self) -> String {
         self.redc().tostring()
     }
@@ -483,6 +487,8 @@ impl FP {
     }
 
     /* return self^e mod Modulus */
+    // Could leak size of e
+    // but not used here with secret exponent e
     pub fn pow(&self, e: &BIG) -> FP {
         let mut tb: [FP; 16] = [
             FP::new(),

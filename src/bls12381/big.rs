@@ -47,11 +47,14 @@ impl Clone for BIG {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::fmt::Debug for BIG {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
     }
 }
+
+#[cfg(feature = "std")]
 impl std::fmt::Display for BIG {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
@@ -185,21 +188,34 @@ impl BIG {
     }
 
     /* Conditional swap of two bigs depending on d using XOR - no branches */
-    pub fn cswap(&mut self, b: &mut BIG, d: isize) {
-        let mut c = d as Chunk;
-        c = !(c - 1);
+    pub fn cswap(&mut self, b: &mut BIG, d: isize) -> Chunk {
+        let c = -d as Chunk;
+        let mut w=0 as Chunk;
+        let r=self.w[0]^b.w[1];
+        let mut ra=r.wrapping_add(r); ra >>= 1;
         for i in 0..NLEN {
-            let t = c & (self.w[i] ^ b.w[i]);
-            self.w[i] ^= t;
-            b.w[i] ^= t;
+            let mut t = c & (self.w[i] ^ b.w[i]);
+            t^=r;
+            let mut e=self.w[i]^t; w^=e;
+            self.w[i]=e^ra; 
+            e=b.w[i]^t;  w^=e;
+            b.w[i]=e^ra;
         }
+        return w;
     }
 
-    pub fn cmove(&mut self, g: &BIG, d: isize) {
+    pub fn cmove(&mut self, g: &BIG, d: isize)  -> Chunk {
         let b = -d as Chunk;
+        let mut w=0 as Chunk;
+        let r=self.w[0]^g.w[1];
+        let mut ra=r.wrapping_add(r); ra >>= 1;
         for i in 0..NLEN {
-            self.w[i] ^= (self.w[i] ^ g.w[i]) & b;
+            let mut t = b & (self.w[i] ^ g.w[i]);
+            t^=r;
+            let e=self.w[i]^t; w^=e;
+            self.w[i]=e^ra; 
         }
+        return w;
     }
 
     /* Shift right by less than a word */
@@ -276,6 +292,8 @@ impl BIG {
     }
 
     /* Convert to Hex String */
+//#[cfg(feature = "std")]
+#[cfg(not(feature = "no_std"))]
     pub fn tostring(&self) -> String {
         let mut s = String::new();
         let mut len = self.nbits();
@@ -299,6 +317,7 @@ impl BIG {
         s
     }
 
+#[cfg(feature = "std")]
     pub fn fromstring(val: String) -> BIG {
         let mut res = BIG::new();
         let len = val.len();
@@ -338,6 +357,7 @@ impl BIG {
         for i in 0..NLEN {
             s.w[i] = self.w[i] + x.w[i];
         }
+        s.norm();
         s
     }
 
@@ -534,11 +554,14 @@ impl BIG {
 
     /* return n-th bit */
     pub fn bit(&self, n: usize) -> isize {
-        if (self.w[n / (BASEBITS as usize)] & (1 << (n % BASEBITS))) > 0 {
-            1
-        } else {
-            0
-        }
+        return ((self.w[n / (BASEBITS as usize)] & (1 << (n % BASEBITS))) >> (n%BASEBITS)) as isize;
+
+
+ //       if (self.w[n / (BASEBITS as usize)] & (1 << (n % BASEBITS))) > 0 {
+//            1
+//        } else {
+//            0
+//        }
     }
 
     /* return n last bits */
@@ -588,68 +611,71 @@ impl BIG {
         self.norm();
     }
 
-    /* reduce self mod m */
-    pub fn rmod(&mut self, n: &BIG) {
-        let mut k = 0;
-        let mut m = BIG::new_copy(n);
-        let mut r = BIG::new();
+// Set self=self mod m in constant time (if bd is known at compile time)
+// bd is Max number of bits in b - Actual number of bits in m
+    pub fn ctmod(&mut self,m:&BIG,bd:usize) {
+        let mut k=bd;
+        let mut r=BIG::new();
+        let mut c=BIG::new_copy(m);
         self.norm();
-        if BIG::comp(self, &m) < 0 {
-            return;
-        }
+
+        c.shl(k);
         loop {
-            m.fshl(1);
-            k += 1;
-            if BIG::comp(self, &m) < 0 {
-                break;
-            }
-        }
-
-        while k > 0 {
-            m.fshr(1);
-
             r.copy(self);
-            r.sub(&m);
+            r.sub(&c);
             r.norm();
-            self.cmove(
-                &r,
-                (1 - ((r.w[NLEN - 1] >> (arch::CHUNK - 1)) & 1)) as isize,
-            );
-            k -= 1;
+            self.cmove(&r,(1 - ((r.w[NLEN - 1] >> (arch::CHUNK - 1)) & 1)) as isize);
+            if k==0 {break;}
+            c.fshr(1);
+            k -= 1;  
         }
     }
 
-    /* divide self by m */
-    pub fn div(&mut self, n: &BIG) {
-        let mut k = 0;
+    /* reduce self mod m */
+    pub fn rmod(&mut self, m: &BIG) {
+        let ss=self.nbits() as isize;
+        let ms=m.nbits() as isize;
+        let mut k=(ss-ms) as usize;
+        if ss<ms {k=0;}
+        self.ctmod(m,k);
+    }
+
+    pub fn ctdiv(&mut self, m:&BIG, bd:usize) {
+        let mut k=bd; 
         self.norm();
         let mut e = BIG::new_int(1);
-        let mut b = BIG::new_copy(self);
-        let mut m = BIG::new_copy(n);
+        let mut a = BIG::new_copy(self);
+        let mut c = BIG::new_copy(m);
         let mut r = BIG::new();
-        self.zero();
+        self.zero(); 
+        
+        c.shl(k);
+        e.shl(k);
 
-        while BIG::comp(&b, &m) >= 0 {
-            e.fshl(1);
-            m.fshl(1);
-            k += 1;
-        }
-
-        while k > 0 {
-            m.fshr(1);
-            e.fshr(1);
-
-            r.copy(&b);
-            r.sub(&m);
+        loop {
+            r.copy(&a);
+            r.sub(&c);
             r.norm();
             let d = (1 - ((r.w[NLEN - 1] >> (arch::CHUNK - 1)) & 1)) as isize;
-            b.cmove(&r, d);
+            a.cmove(&r, d);
             r.copy(self);
             r.add(&e);
             r.norm();
             self.cmove(&r, d);
+            if k==0 {break;}
             k -= 1;
-        }
+            c.fshr(1);
+            e.fshr(1);
+        }    
+    }
+
+    /* divide self by m */
+    pub fn div(&mut self, m: &BIG) {
+        let ss=self.nbits() as isize;
+        let ms=m.nbits() as isize;
+        let mut k=(ss-ms) as usize;
+        if ss<ms {k=0;}
+        self.ctdiv(m,k);
     }
 
     /* get 8*MODBYTES size random number */
@@ -750,7 +776,10 @@ impl BIG {
         }
     }
 
-    /* self=1/self mod p. Binary method */
+// Set self=1/self mod p. Binary method 
+// NOTE: This function is NOT side-channel safe
+// If a is a secret then ALWAYS calculate 1/a = m*(1/am) mod p 
+// where m is a random masking value
     pub fn invmodp(&mut self, p: &BIG) {
         self.rmod(p);
 	    if self.iszilch() {return;}
@@ -979,7 +1008,7 @@ impl BIG {
         a.rmod(m);
         b.rmod(m);
         let mut d = BIG::mul(&a, &b);
-        d.dmod(m)
+        d.ctdmod(m,m.nbits())
     }
 
     /* return a^2 mod m */
@@ -987,7 +1016,7 @@ impl BIG {
         let mut a = BIG::new_copy(a1);
         a.rmod(m);
         let mut d = BIG::sqr(&a);
-        d.dmod(m)
+        d.ctdmod(m,m.nbits())
     }
 
     /* return -a mod m */
@@ -995,7 +1024,7 @@ impl BIG {
         let mut a = BIG::new_copy(a1);
         a.rmod(m);
 	    a.rsub(m);
-	    a.rmod(m);
+	    a.norm();
         a
     }
 
@@ -1006,7 +1035,7 @@ impl BIG {
         a.rmod(m);
         b.rmod(m);
         a.add(&b); a.norm();
-        a.rmod(m);
+        a.ctmod(m,1);
         a
     }
 

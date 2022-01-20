@@ -35,6 +35,22 @@ pub const ERROR: isize = -3;
 pub const EFS: usize = big::MODBYTES as usize;
 pub const EGS: usize = big::MODBYTES as usize;
 
+pub fn rfc7748(r: &mut BIG) {
+    let mut lg=0;
+    let mut t=BIG::new_int(1);
+    let mut c=rom::CURVE_COF_I;
+    while c!=1 {
+        lg+=1;
+        c/=2;
+    }
+    let n=(8*EGS-lg+1) as usize;
+    r.mod2m(n);
+    t.shl(n);
+    r.add(&t);
+    c=r.lastbits(lg as usize);
+    r.dec(c);
+}
+
 #[allow(non_snake_case)]
 pub fn in_range(s: &[u8]) -> bool {
     let r = BIG::new_ints(&rom::CURVE_ORDER);
@@ -58,21 +74,24 @@ pub fn key_pair_generate(rng: Option<&mut impl RAND>, s: &mut [u8], w: &mut [u8]
     let res = 0;
     let mut sc: BIG;
     let G = ECP::generator();
-
     let r = BIG::new_ints(&rom::CURVE_ORDER);
 
     if let Some(x) = rng {
-        sc = BIG::randtrunc(&r, 16 * ecp::AESKEY, x);
+        if ecp::CURVETYPE != ecp::WEIERSTRASS {
+            sc = BIG::random(x);            // from random bytes   
+        } else {
+            sc = BIG::randomnum(&r, x);     // Removes biases
+        }
     } else {
         sc = BIG::frombytes(&s);
-        sc.rmod(&r);
     }
 
+    if ecp::CURVETYPE != ecp::WEIERSTRASS {
+        rfc7748(&mut sc);       // For Montgomery or Edwards, apply RFC7748 transformation
+    }
     sc.tobytes(s);
-
-    let WP = G.mul(&mut sc);
-
-    WP.tobytes(w, false); // To use point compression on public keys, change to true
+    let WP = G.clmul(&sc,&r);
+    WP.tobytes(w, false);       // To use point compression on public keys, change to true
 
     res
 }
@@ -117,7 +136,7 @@ pub fn public_key_validate(w: &[u8]) -> isize {
 pub fn ecpsvdp_dh(s: &[u8], wd: &[u8], z: &mut [u8], typ: isize) -> isize {
     let mut res = 0;
 
-    let mut sc = BIG::frombytes(&s);
+    let sc = BIG::frombytes(&s);
 
     let mut W = ECP::frombytes(&wd);
     if W.is_infinity() {
@@ -126,8 +145,7 @@ pub fn ecpsvdp_dh(s: &[u8], wd: &[u8], z: &mut [u8], typ: isize) -> isize {
 
     if res == 0 {
         let r = BIG::new_ints(&rom::CURVE_ORDER);
-        sc.rmod(&r);
-        W = W.mul(&mut sc);
+        W = W.clmul(&sc,&r);
         if W.is_infinity() {
             res = ERROR;
         } else {
@@ -160,16 +178,16 @@ pub fn ecpsp_dsa(
     c: &mut [u8],
     d: &mut [u8],
 ) -> isize {
-    let mut t: [u8; EFS] = [0; EFS];
-    let mut b: [u8; big::MODBYTES as usize] = [0; big::MODBYTES as usize];
+    let mut t: [u8; EGS] = [0; EGS];
+    let mut b: [u8; EGS] = [0; EGS];
 
-    hmac::GPhashit(hmac::MC_SHA2, sha, &mut b, big::MODBYTES as usize,0,Some(f), -1, None);
+    hmac::GPhashit(hmac::MC_SHA2, sha, &mut b, EGS,0,Some(f), -1, None);
 
     let G = ECP::generator();
 
     let r = BIG::new_ints(&rom::CURVE_ORDER);
 
-    let mut sc = BIG::frombytes(s); /* s or &s? */
+    let sc = BIG::frombytes(s); /* s or &s? */
     let fb = BIG::frombytes(&b);
 
     let mut cb = BIG::new();
@@ -179,10 +197,10 @@ pub fn ecpsp_dsa(
 
     while db.iszilch() {
         let mut u = BIG::randomnum(&r, rng);
-        let mut w = BIG::randomnum(&r, rng); /* side channel masking */
+        let w = BIG::randomnum(&r, rng); /* IMPORTANT - side channel masking to protect invmodp() */
 
         V.copy(&G);
-        V = V.mul(&mut u);
+        V = V.clmul(&u,&r);
         let vx = V.getx();
         cb.copy(&vx);
         cb.rmod(&r);
@@ -190,26 +208,25 @@ pub fn ecpsp_dsa(
             continue;
         }
 
-        tb.copy(&BIG::modmul(&mut u, &mut w, &r));
+        tb.copy(&BIG::modmul(&u, &w, &r));
         u.copy(&tb);
 
         u.invmodp(&r);
-        db.copy(&BIG::modmul(&mut sc, &mut cb, &r));
-        db.add(&fb);
-
-        tb.copy(&BIG::modmul(&mut db, &mut w, &r));
+        db.copy(&BIG::modmul(&sc, &cb, &r));
+        db.copy(&BIG::modadd(&db, &fb, &r));
+        tb.copy(&BIG::modmul(&db, &w, &r));
         db.copy(&tb);
 
-        tb.copy(&BIG::modmul(&mut u, &mut db, &r));
+        tb.copy(&BIG::modmul(&u, &db, &r));
         db.copy(&tb);
     }
 
     cb.tobytes(&mut t);
-    for i in 0..EFS {
+    for i in 0..EGS {
         c[i] = t[i]
     }
     db.tobytes(&mut t);
-    for i in 0..EFS {
+    for i in 0..EGS {
         d[i] = t[i]
     }
     0
@@ -220,9 +237,9 @@ pub fn ecpsp_dsa(
 pub fn ecpvp_dsa(sha: usize, w: &[u8], f: &[u8], c: &[u8], d: &[u8]) -> isize {
     let mut res = 0;
 
-    let mut b: [u8; big::MODBYTES as usize] = [0; big::MODBYTES as usize];
+    let mut b: [u8; EGS] = [0; EGS];
 
-    hmac::GPhashit(hmac::MC_SHA2, sha, &mut b, big::MODBYTES as usize, 0,Some(f), -1, None);
+    hmac::GPhashit(hmac::MC_SHA2, sha, &mut b, EGS, 0,Some(f), -1, None);
 
     let mut G = ECP::generator();
 

@@ -31,11 +31,14 @@ pub struct ECP {
     z: FP,
 }
 
+#[cfg(feature = "std")]
 impl std::fmt::Debug for ECP {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
     }
 }    
+
+#[cfg(feature = "std")]
 impl std::fmt::Display for ECP {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "{}", self.tostring())
@@ -502,6 +505,7 @@ impl ECP {
     }
 
     /* convert to hex string */
+#[cfg(not(feature = "no_std"))]
     pub fn tostring(&self) -> String {
         let mut W = ECP::new();
         W.copy(self);
@@ -1039,13 +1043,30 @@ impl ECP {
         }
     }
 
-    /* return e.self */
+// Point multiplication, multiplies a point P by a scalar e
+// This code has no inherent awareness of the order of the curve, or the order of the point.
+// The order of the curve will be h.r, where h is a cofactor, and r is a large prime
+// Typically P will be of order r (but not always), and typically e will be less than r (but not always)
+// A problem can arise if a secret e is a few bits less than r, as the leading zeros in e will leak via a timing attack
+// The secret e may however be greater than r (see RFC7748 which combines elimination of a small cofactor h with the point multiplication, using an e>r)
+// Our solution is to use as a multiplier an e, whose length in bits is that of the logical OR of e and r, hence allowing e>r while forcing inclusion of leading zeros if e<r. 
+// The point multiplication methods used will process leading zeros correctly.
 
+// So this function leaks information about the length of e...
     pub fn mul(&self, e: &BIG) -> ECP {
+        return self.clmul(e,e);
+    }
+
+// .. but this one does not (typically set maxe=r)
+// Set P=e*P 
+    pub fn clmul(&self, e: &BIG, maxe: &BIG) -> ECP {
         if e.iszilch() || self.is_infinity() {
             return ECP::new();
         }
         let mut P = ECP::new();
+        let mut cm = BIG::new_copy(e); cm.or(maxe);
+        let max=cm.nbits();
+        
         if CURVETYPE == MONTGOMERY {
             /* use Ladder */
             let mut D = ECP::new();
@@ -1055,7 +1076,7 @@ impl ECP {
             R1.copy(&self);
             R1.dbl();
             D.copy(&self); D.affine();
-            let nb = e.nbits();
+            let nb = max;
 
             for i in (0..nb - 1).rev() {
                 let b = e.bit(i);
@@ -1112,7 +1133,7 @@ impl ECP {
             Q.cmove(&self, ns);
             C.copy(&Q);
 
-            let nb = 1 + (t.nbits() + 3) / 4;
+            let nb = 1 + (max + 3) / 4;
 
             // convert exponent to signed 4-bit window
             for i in 0..nb {
@@ -1123,7 +1144,9 @@ impl ECP {
             }
             w[nb] = t.lastbits(5) as i8;
 
-            P.copy(&W[((w[nb] as usize) - 1) / 2]);
+            //P.copy(&W[((w[nb] as usize) - 1) / 2]);
+
+            P.selector(&W, w[nb] as i32);
             for i in (0..nb).rev() {
                 Q.selector(&W, w[i] as i32);
                 P.dbl();
@@ -1291,7 +1314,8 @@ impl ECP {
             w[i] = (4 * a + b) as i8;
         }
         w[nb] = (4 * te.lastbits(3) + tf.lastbits(3)) as i8;
-        S.copy(&W[((w[nb] as usize) - 1) / 2]);
+        //S.copy(&W[((w[nb] as usize) - 1) / 2]);
+        S.selector(&W, w[nb] as i32);
 
         for i in (0..nb).rev() {
             T.selector(&W, w[i] as i32);
