@@ -34,6 +34,5 @@ pub mod rand;
 pub mod share;
 pub mod sha3;
 pub mod nhs;
-pub mod dilithium;
 pub mod x509;
 pub mod bls12381;
