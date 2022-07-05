@@ -12,6 +12,11 @@ include = ["src", "Cargo.toml", "LICENSE", "README.md", "NOTICE.txt"]
 
 [dependencies]
 
+[dev-dependencies]
+hex-literal = "0.3.4"
+
 [features]
-default = ['std']
+default = ['std', 'fallback_separator']
+allow_alt_compress = []
+fallback_separator = []
 std = []
