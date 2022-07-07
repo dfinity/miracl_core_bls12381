@@ -11,6 +11,7 @@ readme = "README.md"
 include = ["src", "Cargo.toml", "LICENSE", "README.md", "NOTICE.txt"]
 
 [dependencies]
+wasm-bindgen = { version = "0.2.67", optional = true }
 
 [dev-dependencies]
 hex-literal = "0.3.4"
@@ -20,3 +21,13 @@ default = ['std', 'fallback_separator']
 allow_alt_compress = []
 fallback_separator = []
 std = []
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-mutable-globals"]
+
+[profile.release]
+lto = true
+opt-level = 'z'

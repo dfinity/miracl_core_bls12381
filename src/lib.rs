@@ -23,6 +23,7 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::manual_memcpy)]
 #![allow(clippy::new_without_default)]
+
 pub mod arch;
 pub mod aes;
 pub mod gcm;
@@ -36,6 +37,21 @@ pub mod sha3;
 pub mod nhs;
 pub mod x509;
 pub mod bls12381;
+
+#[cfg(feature = "wasm-bindgen")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(feature = "wasm-bindgen")]
+#[wasm_bindgen]
+pub fn bls_init() -> isize {
+    bls12381::bls::init()
+}
+
+#[cfg(feature = "wasm-bindgen")]
+#[wasm_bindgen]
+pub fn bls_verify(sig: &[u8], m: &[u8], s: &[u8]) -> isize {
+    bls12381::bls::core_verify(sig, m, s)
+}
 
 #[cfg(test)]
 mod tests {
