@@ -68,7 +68,7 @@ pub const G2_TABLE:usize=69;
 pub const HTC_ISO:usize=11;
 pub const HTC_ISO_G2:usize=3;
 
-pub const ALLOW_ALT_COMPRESS:bool=false;
+pub const ALLOW_ALT_COMPRESS:bool=cfg!(feature = "allow_alt_compress");
 pub const HASH_TYPE:usize=32;
 pub const AESKEY:usize=16;
 
@@ -505,7 +505,7 @@ impl ECP {
     }
 
     /* convert to hex string */
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
     pub fn tostring(&self) -> String {
         let mut W = ECP::new();
         W.copy(self);
