@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "miracl_core_bls12381"
-version = "4.1.2"
+version = "4.2.2"
 dependencies = [
  "hex-literal",
  "wasm-bindgen",
