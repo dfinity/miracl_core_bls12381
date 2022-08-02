@@ -1,6 +1,6 @@
 [package]
 name = "miracl_core_bls12381"
-version = "4.1.2"
+version = "4.2.2"
 authors = ["DFINITY Stiftung <sdk@dfinity.org>"]
 documentation = "https://github.com/miracl/core"
 repository = "https://github.com/dfinity/miracl_core_bls12381"
