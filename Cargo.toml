@@ -9,6 +9,7 @@ description = "Rust code of https://github.com/miracl/core (miracl_core) for cur
 license = "Apache-2.0"
 readme = "README.md"
 include = ["src", "Cargo.toml", "LICENSE", "README.md", "NOTICE.txt"]
+keywords = ["deprecated", "abandoned"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2.67", optional = true }
